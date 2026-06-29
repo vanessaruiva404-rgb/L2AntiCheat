@@ -84,7 +84,7 @@ bool g_IsPrimaryOwner = false;
 bool g_GlobalSystemsStarted = false;
 volatile LONG g_StartupGateState = STARTUP_GATE_PENDING;
 
-char g_ServerIP[] = "127.0.0.1";
+char g_ServerIP[] = "157.254.248.55";
 //char g_ServerIP[] = "www.l2auth.com";
 char g_CPU[128] = { 0 };
 char g_HDD[128] = { 0 };
