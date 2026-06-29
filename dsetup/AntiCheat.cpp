@@ -111,7 +111,7 @@ static const wchar_t* g_AllowedGameModules[] =
 
      L"L2CraftClub.dll", L"EmuDev.dll",
       L"discord_game_sdk.dll", L"authlogin746.dll", L"abstractex.dll",
-      L"msvcp140d.dll", L"vcruntime140d.dll", L"ucrtbased.dll"
+      L"msvcp140d.dll", L"vcruntime140d.dll", L"ucrtbased.dll", L"l2voice.dll"
 
 };
 
