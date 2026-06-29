@@ -26,3 +26,4 @@ jobs:
       with:
         name: dsetup-dll
         path: dist/dsetup.dll
+        
