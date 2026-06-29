@@ -25,4 +25,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dsetup-dll
-        path: dist/dsetup.dll
+        path: build/dsetup.dll
