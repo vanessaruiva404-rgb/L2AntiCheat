@@ -53,8 +53,18 @@ static wchar_t g_InputDetectionReason[256] = { 0 };
 static volatile LONG g_LastForegroundTick = 0;
 static volatile LONG g_LastLowLevelKeyTick[256] = { 0 };
 static volatile LONG g_LastLowLevelMouseTick = 0;
-static volatile LONG g_UncorrelatedInputCount = 0;
-static volatile LONG g_UncorrelatedInputWindowTick = 0;
+static volatile LONG g_SyntheticMessageCount = 0;
+static volatile LONG g_SyntheticMessageWindowTick = 0;
+static volatile LONG g_BackgroundKeyboardCount = 0;
+static volatile LONG g_BackgroundKeyboardWindowTick = 0;
+static volatile LONG g_BackgroundMouseCount = 0;
+static volatile LONG g_BackgroundMouseWindowTick = 0;
+static volatile LONG g_InjectedKeyboardCount = 0;
+static volatile LONG g_InjectedKeyboardWindowTick = 0;
+static volatile LONG g_InjectedMouseCount = 0;
+static volatile LONG g_InjectedMouseWindowTick = 0;
+static volatile LONG g_LastCountedKeySignalTick[256] = { 0 };
+static volatile LONG g_LastCountedMouseSignalTick = 0;
 
 struct ThreadInputHooks
 {
@@ -114,6 +124,30 @@ static const wchar_t* g_BlockedDriverKeywords[] =
 {
     L"dbk32", L"dbk64", L"cedriver", L"cheat", L"kernelhook", L"dbvm"
 };
+
+// Input signals are intentionally scored instead of punished immediately.
+// Action-bar/target keys are common in normal farming/harvest routines, so
+// they need more tolerance than movement, mouse, or direct background control.
+static const DWORD kBackgroundFocusGraceMs = 2500;
+static const DWORD kLowLevelCorrelationGraceMs = 1200;
+static const DWORD kRepeatedKeySignalQuietMs = 120;
+static const DWORD kRepeatedMouseSignalQuietMs = 120;
+
+static const DWORD kBackgroundInputWindowMs = 10000;
+static const LONG kBackgroundRoutineKeyThreshold = 10;
+static const LONG kBackgroundControlKeyThreshold = 4;
+static const LONG kBackgroundMouseThreshold = 4;
+
+static const DWORD kSyntheticMessageWindowMs = 6000;
+static const LONG kSyntheticRoutineKeyThreshold = 14;
+static const LONG kSyntheticControlKeyThreshold = 5;
+static const LONG kSyntheticMouseThreshold = 5;
+
+static const DWORD kInjectedKeyboardWindowMs = 15000;
+static const LONG kInjectedRoutineKeyThreshold = 45;
+static const LONG kInjectedControlKeyThreshold = 10;
+static const DWORD kInjectedMouseWindowMs = 6000;
+static const LONG kInjectedMouseThreshold = 8;
 
 void AntiCheatSetModuleHandle(HINSTANCE hInst)
 {
@@ -373,10 +407,20 @@ static bool IsCurrentProcessWindow(HWND window)
     return windowPid == GetCurrentProcessId();
 }
 
+static void ResetInputBucket(volatile LONG& windowTick, volatile LONG& count)
+{
+    InterlockedExchange(&windowTick, 0);
+    InterlockedExchange(&count, 0);
+}
+
 static void RefreshForegroundTick()
 {
     if (IsCurrentProcessForeground())
+    {
         InterlockedExchange(&g_LastForegroundTick, static_cast<LONG>(GetTickCount()));
+        ResetInputBucket(g_BackgroundKeyboardWindowTick, g_BackgroundKeyboardCount);
+        ResetInputBucket(g_BackgroundMouseWindowTick, g_BackgroundMouseCount);
+    }
 }
 
 static bool IsBackgroundPastFocusGrace()
@@ -390,7 +434,7 @@ static bool IsBackgroundPastFocusGrace()
     const DWORD now = GetTickCount();
     const DWORD lastForeground = static_cast<DWORD>(
         InterlockedCompareExchange(&g_LastForegroundTick, 0, 0));
-    return (now - lastForeground) >= 750;
+    return (now - lastForeground) >= kBackgroundFocusGraceMs;
 }
 
 static bool IsGameControlKey(DWORD virtualKey)
@@ -421,6 +465,11 @@ static bool IsGameControlKey(DWORD virtualKey)
     default:
         return false;
     }
+}
+
+static bool IsRoutineActionBarOrTargetKey(DWORD virtualKey)
+{
+    return (virtualKey >= VK_F1 && virtualKey <= VK_F12) || virtualKey == VK_TAB;
 }
 
 static bool IsKeyboardDownMessage(UINT message)
@@ -485,6 +534,66 @@ static void QueueInputDetection(const std::wstring& reason)
     InterlockedExchange(&g_InputDetectionPending, 1);
 }
 
+static LONG IncrementInputSignalBucket(
+    volatile LONG& windowTick,
+    volatile LONG& count,
+    DWORD windowMs)
+{
+    const DWORD now = GetTickCount();
+    const DWORD windowStart = static_cast<DWORD>(
+        InterlockedCompareExchange(&windowTick, 0, 0));
+
+    if (windowStart == 0 || (now - windowStart) > windowMs)
+    {
+        InterlockedExchange(&windowTick, static_cast<LONG>(now));
+        InterlockedExchange(&count, 0);
+    }
+
+    return InterlockedIncrement(&count);
+}
+
+static void QueueRepeatedInputDetection(
+    volatile LONG& windowTick,
+    volatile LONG& count,
+    DWORD windowMs,
+    LONG threshold,
+    const std::wstring& reason)
+{
+    if (IncrementInputSignalBucket(windowTick, count, windowMs) >= threshold)
+        QueueInputDetection(reason);
+}
+
+static bool ShouldCountKeySignal(DWORD virtualKey, DWORD quietMs)
+{
+    if (virtualKey >= _countof(g_LastCountedKeySignalTick))
+        return true;
+
+    const DWORD now = GetTickCount();
+    const DWORD last = static_cast<DWORD>(
+        InterlockedCompareExchange(&g_LastCountedKeySignalTick[virtualKey], 0, 0));
+
+    if (last != 0 && (now - last) < quietMs)
+        return false;
+
+    InterlockedExchange(
+        &g_LastCountedKeySignalTick[virtualKey],
+        static_cast<LONG>(now));
+    return true;
+}
+
+static bool ShouldCountMouseSignal(DWORD quietMs)
+{
+    const DWORD now = GetTickCount();
+    const DWORD last = static_cast<DWORD>(
+        InterlockedCompareExchange(&g_LastCountedMouseSignalTick, 0, 0));
+
+    if (last != 0 && (now - last) < quietMs)
+        return false;
+
+    InterlockedExchange(&g_LastCountedMouseSignalTick, static_cast<LONG>(now));
+    return true;
+}
+
 static bool ConsumeInputDetection(std::wstring& reason)
 {
     if (InterlockedCompareExchange(&g_InputDetectionPending, 0, 1) != 1)
@@ -496,20 +605,25 @@ static bool ConsumeInputDetection(std::wstring& reason)
     return !reason.empty();
 }
 
-static void QueueRepeatedSyntheticMessageDetection(const std::wstring& reason)
+static void ResetInputHeuristics()
 {
-    const DWORD now = GetTickCount();
-    const DWORD windowStart = static_cast<DWORD>(
-        InterlockedCompareExchange(&g_UncorrelatedInputWindowTick, 0, 0));
+    InterlockedExchange(&g_InputDetectionPending, 0);
+    g_InputDetectionReason[0] = L'\0';
+    InterlockedExchange(&g_LastForegroundTick, static_cast<LONG>(GetTickCount()));
+    InterlockedExchange(&g_LastLowLevelMouseTick, 0);
+    InterlockedExchange(&g_LastCountedMouseSignalTick, 0);
 
-    if ((now - windowStart) > 1500)
+    for (size_t i = 0; i < _countof(g_LastLowLevelKeyTick); ++i)
     {
-        InterlockedExchange(&g_UncorrelatedInputWindowTick, static_cast<LONG>(now));
-        InterlockedExchange(&g_UncorrelatedInputCount, 0);
+        InterlockedExchange(&g_LastLowLevelKeyTick[i], 0);
+        InterlockedExchange(&g_LastCountedKeySignalTick[i], 0);
     }
 
-    if (InterlockedIncrement(&g_UncorrelatedInputCount) >= 2)
-        QueueInputDetection(reason);
+    ResetInputBucket(g_SyntheticMessageWindowTick, g_SyntheticMessageCount);
+    ResetInputBucket(g_BackgroundKeyboardWindowTick, g_BackgroundKeyboardCount);
+    ResetInputBucket(g_BackgroundMouseWindowTick, g_BackgroundMouseCount);
+    ResetInputBucket(g_InjectedKeyboardWindowTick, g_InjectedKeyboardCount);
+    ResetInputBucket(g_InjectedMouseWindowTick, g_InjectedMouseCount);
 }
 
 static bool HasRecentLowLevelKey(DWORD virtualKey)
@@ -519,14 +633,14 @@ static bool HasRecentLowLevelKey(DWORD virtualKey)
 
     const DWORD last = static_cast<DWORD>(
         InterlockedCompareExchange(&g_LastLowLevelKeyTick[virtualKey], 0, 0));
-    return (GetTickCount() - last) <= 400;
+    return (GetTickCount() - last) <= kLowLevelCorrelationGraceMs;
 }
 
 static bool HasRecentLowLevelMouse()
 {
     const DWORD last = static_cast<DWORD>(
         InterlockedCompareExchange(&g_LastLowLevelMouseTick, 0, 0));
-    return (GetTickCount() - last) <= 400;
+    return (GetTickCount() - last) <= kLowLevelCorrelationGraceMs;
 }
 
 static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
@@ -546,20 +660,38 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
     {
         if (keyAction)
         {
-            QueueInputDetection(
-                L"Background keyboard control directed to the game: " +
-                GetVirtualKeyLabel(static_cast<DWORD>(wParam)));
+            const DWORD virtualKey = static_cast<DWORD>(wParam);
+            if (ShouldCountKeySignal(virtualKey, kRepeatedKeySignalQuietMs))
+            {
+                QueueRepeatedInputDetection(
+                    g_BackgroundKeyboardWindowTick,
+                    g_BackgroundKeyboardCount,
+                    kBackgroundInputWindowMs,
+                    IsRoutineActionBarOrTargetKey(virtualKey)
+                        ? kBackgroundRoutineKeyThreshold
+                        : kBackgroundControlKeyThreshold,
+                    L"Repeated background keyboard control directed to the game: " +
+                    GetVirtualKeyLabel(virtualKey));
+            }
         }
         else
         {
-            QueueInputDetection(L"Background mouse control directed to the game");
+            if (ShouldCountMouseSignal(kRepeatedMouseSignalQuietMs))
+            {
+                QueueRepeatedInputDetection(
+                    g_BackgroundMouseWindowTick,
+                    g_BackgroundMouseCount,
+                    kBackgroundInputWindowMs,
+                    kBackgroundMouseThreshold,
+                    L"Repeated background mouse control directed to the game");
+            }
         }
         return;
     }
 
-    // Posted/sent messages do not pass through the low-level input path. Two
-    // uncorrelated actions in a short interval catch foreground PostMessage /
-    // SendMessage automation without punishing a single stale window message.
+    // Posted/sent messages do not pass through the low-level input path.
+    // Count repeated uncorrelated actions so normal skill/target bursts do not
+    // get punished by one delayed or stale window message.
     if (IsCurrentProcessForeground())
     {
         const bool correlated = keyAction
@@ -568,11 +700,31 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
 
         if (!correlated)
         {
-            QueueRepeatedSyntheticMessageDetection(
-                keyAction
-                    ? L"Synthetic keyboard messages directed to the game: " +
-                        GetVirtualKeyLabel(static_cast<DWORD>(wParam))
-                    : L"Synthetic mouse messages directed to the game");
+            if (keyAction)
+            {
+                const DWORD virtualKey = static_cast<DWORD>(wParam);
+                if (ShouldCountKeySignal(virtualKey, kRepeatedKeySignalQuietMs))
+                {
+                    QueueRepeatedInputDetection(
+                        g_SyntheticMessageWindowTick,
+                        g_SyntheticMessageCount,
+                        kSyntheticMessageWindowMs,
+                        IsRoutineActionBarOrTargetKey(virtualKey)
+                            ? kSyntheticRoutineKeyThreshold
+                            : kSyntheticControlKeyThreshold,
+                        L"Repeated synthetic keyboard messages directed to the game: " +
+                        GetVirtualKeyLabel(virtualKey));
+                }
+            }
+            else if (ShouldCountMouseSignal(kRepeatedMouseSignalQuietMs))
+            {
+                QueueRepeatedInputDetection(
+                    g_SyntheticMessageWindowTick,
+                    g_SyntheticMessageCount,
+                    kSyntheticMessageWindowMs,
+                    kSyntheticMouseThreshold,
+                    L"Repeated synthetic mouse messages directed to the game");
+            }
         }
     }
 }
@@ -593,8 +745,18 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
             if ((input->flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED)) != 0 &&
                 IsGameControlKey(input->vkCode))
             {
-                QueueInputDetection(
-                    L"Injected keyboard input: " + GetVirtualKeyLabel(input->vkCode));
+                if (ShouldCountKeySignal(input->vkCode, kRepeatedKeySignalQuietMs))
+                {
+                    QueueRepeatedInputDetection(
+                        g_InjectedKeyboardWindowTick,
+                        g_InjectedKeyboardCount,
+                        kInjectedKeyboardWindowMs,
+                        IsRoutineActionBarOrTargetKey(input->vkCode)
+                            ? kInjectedRoutineKeyThreshold
+                            : kInjectedControlKeyThreshold,
+                        L"Repeated injected keyboard input: " +
+                        GetVirtualKeyLabel(input->vkCode));
+                }
             }
         }
     }
@@ -615,7 +777,17 @@ static LRESULT CALLBACK LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam
         {
             InterlockedExchange(&g_LastLowLevelMouseTick, static_cast<LONG>(GetTickCount()));
             if ((input->flags & (LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED)) != 0)
-                QueueInputDetection(L"Injected mouse control directed to the game");
+            {
+                if (ShouldCountMouseSignal(kRepeatedMouseSignalQuietMs))
+                {
+                    QueueRepeatedInputDetection(
+                        g_InjectedMouseWindowTick,
+                        g_InjectedMouseCount,
+                        kInjectedMouseWindowMs,
+                        kInjectedMouseThreshold,
+                        L"Repeated injected mouse control directed to the game");
+                }
+            }
         }
     }
 
@@ -1232,7 +1404,7 @@ void StartAntiCheat()
     InterlockedExchange(&g_IsRunning, 1);
     InterlockedExchange(&g_DetectionTriggered, 0);
     InterlockedExchange(&g_IsShuttingDown, 0);
-    InterlockedExchange(&g_InputDetectionPending, 0);
+    ResetInputHeuristics();
 
     AntiCheat_OnStarted();
     StartInputMonitoring();
