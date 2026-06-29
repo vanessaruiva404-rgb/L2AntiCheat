@@ -906,8 +906,8 @@ DWORD WINAPI BootstrapThread(LPVOID)
         RefreshPrimaryOwnership();
         g_hOwnershipMonitorThread = CreateThread(NULL, 0, OwnershipMonitorThread, NULL, 0, NULL);
     }
-    VoiceOverlay_Initialize(g_ModuleHandle);
-    g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
+    // VoiceOverlay_Initialize(g_ModuleHandle);
+    // g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
  
    
     return 0;
