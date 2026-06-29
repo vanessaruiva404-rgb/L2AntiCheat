@@ -19,7 +19,7 @@ jobs:
 
     - name: Build Solution
       run: |
-        msbuild dsetup.sln /p:Configuration=Release /p:Platform=x86
+        msbuild dsetup.sln /p:Configuration=Release /p:Platform=Win32
 
     - name: Upload Compiled DLL
       uses: actions/upload-artifact@v4
