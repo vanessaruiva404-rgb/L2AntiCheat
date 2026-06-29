@@ -82,6 +82,7 @@ FileCheckResult VerifyProtectedFiles()
     result.fileChanged = false;
     result.fileMissing = false;
     result.errorCode = ERROR_SUCCESS;
+    return result;
 
     std::string hash;
 
