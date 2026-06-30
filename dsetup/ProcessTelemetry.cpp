@@ -39,7 +39,7 @@ namespace
     const DWORD kSessionRetryMs = 5000;
     const DWORD kNetworkRetryMs = 10000;
     const size_t kMaxProcesses = 256;
-    const wchar_t* kBanWindowClass = L"L2_ELYSIAN_BLOCKED_DEVICE";
+    const wchar_t* kBanWindowClass = L"L2_RP_BLOCKED_DEVICE";
 
     HANDLE g_TelemetryThread = NULL;
     HANDLE g_TelemetryStopEvent = NULL;
