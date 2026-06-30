@@ -9,7 +9,7 @@ bool ClientInstanceManager::_isOwner = false;
 
 std::wstring ClientInstanceManager::GetSlotMutexName(LONG slot)
 {
-    return L"Global\\L2ELYSIAN_CLIENT_SLOT_" + std::to_wstring(slot);
+    return L"Global\\L2RP_CLIENT_SLOT_" + std::to_wstring(slot);
 }
 
 bool ClientInstanceManager::Acquire()
