@@ -946,6 +946,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hModule);
         InterlockedExchange(&g_StartupGateState, STARTUP_GATE_PENDING);
 
+        // Verificacao do argumento secreto do Launcher
+        LPWSTR cmdLine = GetCommandLineW();
+        if (cmdLine == NULL || wcsstr(cmdLine, L"-from-launcher") == NULL)
+        {
+            ShowProtectionAlertBlocking(
+                L"L2 RP Protection",
+                L"Acesso Negado!",
+                L"Por favor, inicie o jogo usando o Launcher Oficial.",
+                3800);
+
+            TerminateProcess(GetCurrentProcess(), ERROR_ACCESS_DENIED);
+            return FALSE;
+        }
+
         if (!ClientInstanceManager::Acquire())
         {
             ShowProtectionAlertBlocking(
