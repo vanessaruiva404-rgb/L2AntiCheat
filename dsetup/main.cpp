@@ -949,7 +949,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         if (!ClientInstanceManager::Acquire())
         {
             ShowProtectionAlertBlocking(
-                L"L2Elysian Protection",
+                L"L2 RP Protection",
                 L"Limite de sess\u00f5es por HWID atingido.",
                 L"Contas Premium/VIP possuem permiss\u00e3o para at\u00e9 2 clientes simult\u00e2neos.",
                 3800);
