@@ -6,7 +6,7 @@
 namespace
 {
     const wchar_t* kProtectionAlertClass =
-        L"L2ELYSIAN_PROTECTION_ALERT";
+        L"L2RP_PROTECTION_ALERT";
     const UINT_PTR kAlertTimerId = 1;
     const int kAlertWidth = 430;
     const int kAlertHeight = 206;
