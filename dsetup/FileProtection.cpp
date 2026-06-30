@@ -12,8 +12,8 @@ static const wchar_t* FILE_INTERFACE_U = L"interface.u";
 static const wchar_t* FILE_INTERFACE_XDAT = L"interface.xdat";
 
 //  HASHES ORIGINAIS (VOCÊ VAI GERAR)
-static const char* HASH_INTERFACE_U = "6FDBA37B63C9639AA02938C1EB924E9C6EE5C274FA883B16C35734C681B8E193";
-static const char* HASH_INTERFACE_XDAT = "3AF3A1A61E55877C5BD85DB50E1CE26418B5EBFA02CED5936C7BA08D629FFBAA";
+static const char* HASH_INTERFACE_U = "22774A09E14530A04C878560F74F1D4463F515DA156C78CE3ED88EF22A11BF44";
+static const char* HASH_INTERFACE_XDAT = "DF290CD38059BF72ABAF919A8AD12ECD34488B155D6E0B9455944BA968D17891";
 
 bool GetFileHash(const wchar_t* file, std::string& outHash)
 {
@@ -82,7 +82,6 @@ FileCheckResult VerifyProtectedFiles()
     result.fileChanged = false;
     result.fileMissing = false;
     result.errorCode = ERROR_SUCCESS;
-    return result;
 
     std::string hash;
 
