@@ -25,13 +25,13 @@ namespace
     const int kTooltipHeight = 94;
 
     const wchar_t* kNotificationWindowClass =
-        L"L2ELYSIAN_NOTIFICATION_WINDOW";
+        L"L2RP_NOTIFICATION_WINDOW";
     const wchar_t* kPanelWindowClass =
-        L"L2ELYSIAN_PROTECTION_PANEL";
+        L"L2RP_PROTECTION_PANEL";
     const wchar_t* kTooltipWindowClass =
-        L"L2ELYSIAN_NOTIFICATION_TOOLTIP";
+        L"L2RP_NOTIFICATION_TOOLTIP";
     const wchar_t* kWebsiteUrl =
-        L"https://www.l2elysian.com.br";
+        L"https://www.l2rp.com.br";
 
     HINSTANCE g_Module = NULL;
     HANDLE g_UiThread = NULL;
