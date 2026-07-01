@@ -99,7 +99,7 @@ static const wchar_t* g_AllowedGameModules[] =
     L"dsetup.dll", L"engine.dll", L"core.dll", L"l2.exe", L"window.dll", L"l2ui.dll",
     L"libiconv-2.dll", L"lineageenv.dll", L"nophx.dll", L"vmfx.dll", L"vorbis.dll",
     L"ogg.dll", L"fire.dll", L"openal32.dll", L"orc.dll", L"npkcrypt.dll", L"npkscrypt.dll",
-    L"vorbisfile.dll", L"ifc23.dll", L"windrv.dll", L"encvag.dll",
+    L"vorbisfile.dll", L"ifc23.dll", L"windrv.dll", L"d3ddrv.dll", L"encvag.dll",
     L"entry.dll", L"ipdrv.dll", L"msxml4.dll", L"msxml4a.dll", L"msxml4r.dll",
     L"nosleep.dll", L"npkpdb.dll", L"wrap_oal.dll", L"nwindow.dll", L"alaudio.dll",
     L"defopenal32.dll", L"l2voice.dll",
