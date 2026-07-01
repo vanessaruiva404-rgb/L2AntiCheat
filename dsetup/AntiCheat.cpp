@@ -99,19 +99,19 @@ static const wchar_t* g_AllowedGameModules[] =
     L"dsetup.dll", L"engine.dll", L"core.dll", L"l2.exe", L"window.dll", L"l2ui.dll",
     L"libiconv-2.dll", L"lineageenv.dll", L"nophx.dll", L"vmfx.dll", L"vorbis.dll",
     L"ogg.dll", L"fire.dll", L"openal32.dll", L"orc.dll", L"npkcrypt.dll", L"npkscrypt.dll",
-    L"vorbisfile.dll", L"ifc23.dll", L"windrv.dll", L"d3ddrv.dll", L"encvag.dll",
+    L"vorbisfile.dll", L"ifc23.dll", L"windrv.dll", L"encvag.dll",
     L"entry.dll", L"ipdrv.dll", L"msxml4.dll", L"msxml4a.dll", L"msxml4r.dll",
     L"nosleep.dll", L"npkpdb.dll", L"wrap_oal.dll", L"nwindow.dll", L"alaudio.dll",
-    L"defopenal32.dll",
+    L"defopenal32.dll", L"l2voice.dll",
 
     // Optional overlays/capture modules. Remove what you don't want to allow.
     L"game_detour_32.dll", L"graphics-hook32.dll", L"graphics-hook64.dll",
-    L"discordhook.dll", L"nvspcap.dll", L"gameoverlayrenderer.dll",
+    L"discordhook.dll", L"nvspcap.dll", L"nvscpapi.dll", L"gameoverlayrenderer.dll",
     L"gameoverlayrenderer64.dll", L"rtsshooks.dll",
 
      L"L2CraftClub.dll", L"EmuDev.dll",
       L"discord_game_sdk.dll", L"authlogin746.dll", L"abstractex.dll",
-      L"msvcp140d.dll", L"vcruntime140d.dll", L"ucrtbased.dll", L"l2voice.dll"
+      L"msvcp140d.dll", L"vcruntime140d.dll", L"ucrtbased.dll"
 
 };
 
@@ -1235,6 +1235,9 @@ static bool ScanModules(std::wstring& reason)
             }
             continue;
         }
+
+        if (EqualsAnyInsensitive(modName, g_AllowedGameModules, _countof(g_AllowedGameModules)))
+            continue;
 
         reason = L"External module: " + modName;
         return true;
