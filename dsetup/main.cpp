@@ -946,7 +946,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hModule);
         InterlockedExchange(&g_StartupGateState, STARTUP_GATE_PENDING);
 
-        // Verificacao do argumento secreto do Launcher
+        // Verificacao do argumento secreto do Launcher (DESATIVADO)
+        /*
         LPWSTR cmdLine = GetCommandLineW();
         if (cmdLine == NULL || wcsstr(cmdLine, L"-from-launcher") == NULL)
         {
@@ -959,6 +960,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
             TerminateProcess(GetCurrentProcess(), ERROR_ACCESS_DENIED);
             return FALSE;
         }
+        */
 
         if (!ClientInstanceManager::Acquire())
         {
