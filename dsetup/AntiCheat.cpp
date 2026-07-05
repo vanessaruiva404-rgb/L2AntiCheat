@@ -102,7 +102,7 @@ static const wchar_t* g_AllowedGameModules[] =
     L"vorbisfile.dll", L"ifc23.dll", L"windrv.dll", L"d3ddrv.dll", L"encvag.dll",
     L"entry.dll", L"ipdrv.dll", L"msxml4.dll", L"msxml4a.dll", L"msxml4r.dll",
     L"nosleep.dll", L"npkpdb.dll", L"wrap_oal.dll", L"nwindow.dll", L"alaudio.dll",
-    L"defopenal32.dll", L"l2voice.dll",
+    L"defopenal32.dll", L"l2voice.dll", L"detoured.dll",
 
     // Optional overlays/capture modules. Remove what you don't want to allow.
     L"game_detour_32.dll", L"graphics-hook32.dll", L"graphics-hook64.dll",
