@@ -731,7 +731,7 @@ static void* g_pNetworkHandler = NULL;
 typedef void (__thiscall* UNetworkHandlerSendFn)(void* thisPtr, int len, unsigned char* buf);
 static int g_SendVtableOffset = -1;
 
-void __thiscall HookUNetworkHandlerInit(void* thisPtr, int param1, void* param2)
+void __fastcall HookUNetworkHandlerInit(void* thisPtr, void* edx, int param1, void* param2)
 {
     g_pNetworkHandler = thisPtr;
     true_UNetworkHandlerInit(thisPtr, param1, param2);
