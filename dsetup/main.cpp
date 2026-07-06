@@ -717,6 +717,97 @@ int WSAAPI HookCloseSocket(SOCKET s)
     return true_closesocket(s);
 }
 
+// --- Cancel Buff Native Function ---
+struct FFrame;
+class UObject;
+
+typedef void (__thiscall* UObjectStepFn)(UObject* self, FFrame& stack, UObject* context, void* const result);
+static UObjectStepFn g_UObjectStep = NULL;
+
+typedef void (__thiscall* UNetworkHandlerInitFn)(void* thisPtr, int param1, void* param2);
+static UNetworkHandlerInitFn true_UNetworkHandlerInit = NULL;
+static void* g_pNetworkHandler = NULL;
+
+typedef void (__thiscall* UNetworkHandlerSendFn)(void* thisPtr, int len, unsigned char* buf);
+static int g_SendVtableOffset = -1;
+
+void __thiscall HookUNetworkHandlerInit(void* thisPtr, int param1, void* param2)
+{
+    g_pNetworkHandler = thisPtr;
+    true_UNetworkHandlerInit(thisPtr, param1, param2);
+}
+
+void ResolveSendVtableOffset()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return;
+
+    unsigned char* pFunc = (unsigned char*)GetProcAddress(engine, "?RequestOlympiadObserverEnd@UNetworkHandler@@UAEXXZ");
+    if (!pFunc) {
+        pFunc = (unsigned char*)GetProcAddress(engine, "?SendLogOutPacket@UNetworkHandler@@UAEXXZ");
+    }
+    if (!pFunc) return;
+
+    for (int i = 0; i < 40; ++i)
+    {
+        if (pFunc[i] == 0x8B && pFunc[i+1] == 0x01)
+        {
+            for (int j = i + 2; j < i + 12; ++j)
+            {
+                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x50) // call [eax + 1-byte offset]
+                {
+                    g_SendVtableOffset = pFunc[j+2];
+                    return;
+                }
+                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x90) // call [eax + 4-byte offset]
+                {
+                    g_SendVtableOffset = *(int*)(pFunc + j + 2);
+                    return;
+                }
+            }
+        }
+    }
+    g_SendVtableOffset = 56; // fallback index 14 (offset 56 bytes)
+}
+
+typedef void (__fastcall* NativeFn)(UObject* self, void* edx, FFrame& stack, void* const result);
+static NativeFn* g_pGNatives = NULL;
+
+void __fastcall NativeRequestCancelBuff(UObject* Self, void* edx, FFrame& Stack, void* const Result)
+{
+    int skillId = 0;
+    int skillLevel = 0;
+
+    if (g_UObjectStep)
+    {
+        g_UObjectStep(Self, Stack, Self, &skillId);
+        g_UObjectStep(Self, Stack, Self, &skillLevel);
+    }
+
+    if (g_pNetworkHandler)
+    {
+        if (g_SendVtableOffset == -1)
+        {
+            ResolveSendVtableOffset();
+        }
+
+        if (g_SendVtableOffset != -1)
+        {
+            unsigned char packet[13];
+            *(unsigned short*)&packet[0] = 13;
+            packet[2] = 0xD0;
+            *(unsigned short*)&packet[3] = 0x50; // RequestCancelBuff
+            *(unsigned int*)&packet[5] = skillId;
+            *(unsigned int*)&packet[9] = skillLevel;
+
+            void** vtable = *(void***)g_pNetworkHandler;
+            UNetworkHandlerSendFn sendFunc = *(UNetworkHandlerSendFn*)((unsigned char*)vtable + g_SendVtableOffset);
+            
+            sendFunc(g_pNetworkHandler, 13, packet);
+        }
+    }
+}
+
 void InstallHooks()
 {
     HMODULE ws2 = GetModuleHandleA("ws2_32.dll");
@@ -731,6 +822,30 @@ void InstallHooks()
 
     if (!true_closesocket)
         true_closesocket = (_closesocket)splice((unsigned char*)GetProcAddress(ws2, "closesocket"), HookCloseSocket);
+
+    // Register UNetworkHandler::Init Hook
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (engine)
+    {
+        unsigned char* pInit = (unsigned char*)GetProcAddress(engine, "?Init@UNetworkHandler@@UAEXHPAVUGameEngine@@@Z");
+        if (pInit)
+        {
+            true_UNetworkHandlerInit = (UNetworkHandlerInitFn)splice(pInit, HookUNetworkHandlerInit);
+        }
+    }
+
+    // Register UnrealScript native function
+    HMODULE core = GetModuleHandleW(L"core.dll");
+    if (core)
+    {
+        g_pGNatives = (NativeFn*)GetProcAddress(core, "?GNatives@@3PAP8UObject@@AEXAAUFFrame@@QAX@ZA");
+        g_UObjectStep = (UObjectStepFn)GetProcAddress(core, "?Step@UObject@@QAEXAAUFFrame@@PAV1@PAX@Z");
+    }
+
+    if (g_pGNatives)
+    {
+        g_pGNatives[3989] = (NativeFn)&NativeRequestCancelBuff;
+    }
 }
 
 DWORD WINAPI OwnershipMonitorThread(LPVOID)
