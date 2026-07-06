@@ -721,8 +721,8 @@ int WSAAPI HookCloseSocket(SOCKET s)
 struct FFrame;
 class UObject;
 
-typedef void (__thiscall* UObjectStepFn)(UObject* self, FFrame& stack, UObject* context, void* const result);
-static UObjectStepFn g_UObjectStep = NULL;
+typedef void (__thiscall* FFrameStepFn)(FFrame* self, UObject* context, void* const result);
+static FFrameStepFn g_FFrameStep = NULL;
 
 typedef void (__thiscall* UNetworkHandlerInitFn)(void* thisPtr, int param1, void* param2);
 static UNetworkHandlerInitFn true_UNetworkHandlerInit = NULL;
@@ -778,10 +778,10 @@ void __fastcall NativeRequestCancelBuff(UObject* Self, void* edx, FFrame& Stack,
     int skillId = 0;
     int skillLevel = 0;
 
-    if (g_UObjectStep)
+    if (g_FFrameStep)
     {
-        g_UObjectStep(Self, Stack, Self, &skillId);
-        g_UObjectStep(Self, Stack, Self, &skillLevel);
+        g_FFrameStep(&Stack, Self, &skillId);
+        g_FFrameStep(&Stack, Self, &skillLevel);
     }
 
     // Avança o ponteiro de código do FFrame para consumir o token de fim de parâmetros (EX_EndFunctionParms / P_FINISH)
@@ -849,7 +849,7 @@ void InstallHooks()
     if (core)
     {
         g_pGNatives = (NativeFn*)GetProcAddress(core, "?GNatives@@3PAP8UObject@@AEXAAUFFrame@@QAX@ZA");
-        g_UObjectStep = (UObjectStepFn)GetProcAddress(core, "?Step@UObject@@QAEXAAUFFrame@@PAV1@PAX@Z");
+        g_FFrameStep = (FFrameStepFn)GetProcAddress(core, "?Step@FFrame@@QAEXPAVUObject@@QAX@Z");
     }
 
     if (g_pGNatives)
