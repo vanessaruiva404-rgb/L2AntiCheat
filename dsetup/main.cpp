@@ -784,26 +784,36 @@ void __fastcall NativeRequestCancelBuff(UObject* Self, void* edx, FFrame& Stack,
         g_UObjectStep(Self, Stack, Self, &skillLevel);
     }
 
+    // Avança o ponteiro de código do FFrame para consumir o token de fim de parâmetros (EX_EndFunctionParms / P_FINISH)
+    unsigned char* pStack = (unsigned char*)&Stack;
+    unsigned char** pCode = (unsigned char**)(pStack + 12);
+    if (pCode && *pCode)
+    {
+        (*pCode)++; // Equivalente a P_FINISH (Stack.Code++)
+    }
+
     if (g_pNetworkHandler)
     {
-        if (g_SendVtableOffset == -1)
+        // Obtém o objeto de socket/conexão a partir do offset 0x48 do UNetworkHandler
+        void* pSocket = *(void**)((unsigned char*)g_pNetworkHandler + 0x48);
+        if (pSocket)
         {
-            ResolveSendVtableOffset();
-        }
+            // O método virtual de envio (Send) está na vtable do socket no offset 0x68 (index 26)
+            void** socketVtable = *(void***)pSocket;
+            if (socketVtable)
+            {
+                typedef void (__thiscall* SocketSendFn)(void* thisPtr, int len, unsigned char* buf);
+                SocketSendFn sendFunc = (SocketSendFn)socketVtable[26]; // 0x68 / 4 = 26
+                
+                unsigned char packet[13];
+                *(unsigned short*)&packet[0] = 13;
+                packet[2] = 0xD0;
+                *(unsigned short*)&packet[3] = 0x50; // RequestCancelBuff sub-opcode
+                *(unsigned int*)&packet[5] = skillId;
+                *(unsigned int*)&packet[9] = skillLevel;
 
-        if (g_SendVtableOffset != -1)
-        {
-            unsigned char packet[13];
-            *(unsigned short*)&packet[0] = 13;
-            packet[2] = 0xD0;
-            *(unsigned short*)&packet[3] = 0x50; // RequestCancelBuff
-            *(unsigned int*)&packet[5] = skillId;
-            *(unsigned int*)&packet[9] = skillLevel;
-
-            void** vtable = *(void***)g_pNetworkHandler;
-            UNetworkHandlerSendFn sendFunc = *(UNetworkHandlerSendFn*)((unsigned char*)vtable + g_SendVtableOffset);
-            
-            sendFunc(g_pNetworkHandler, 13, packet);
+                sendFunc(pSocket, 13, packet);
+            }
         }
     }
 }
