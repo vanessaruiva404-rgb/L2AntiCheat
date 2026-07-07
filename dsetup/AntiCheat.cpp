@@ -108,6 +108,7 @@ static const wchar_t* g_AllowedGameModules[] =
     L"game_detour_32.dll", L"graphics-hook32.dll", L"graphics-hook64.dll",
     L"discordhook.dll", L"nvspcap.dll", L"nvscpapi.dll", L"gameoverlayrenderer.dll",
     L"gameoverlayrenderer64.dll", L"rtsshooks.dll",
+    L"nvd3d9wrap.dll", L"nvd3d9wrapx.dll", L"nvinit.dll", L"nvinitx.dll",
 
      L"L2CraftClub.dll", L"EmuDev.dll",
       L"discord_game_sdk.dll", L"authlogin746.dll", L"abstractex.dll",
