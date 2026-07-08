@@ -1062,6 +1062,126 @@ HRESULT WINAPI DirectXSetupGetVersion(DWORD* version, DWORD* minor)
 }
  
 
+struct WinData {
+    DWORD pid;
+    HWND hwnd;
+};
+
+static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    WinData* data = (WinData*)lParam;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == data->pid) {
+        if (IsWindowVisible(hwnd)) {
+            data->hwnd = hwnd;
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static bool IsGhostProcess(DWORD pid) {
+    WinData data = { pid, NULL };
+    EnumWindows(EnumWindowsProc, (LPARAM)&data);
+    if (data.hwnd == NULL) {
+        return true;
+    }
+    if (IsHungAppWindow(data.hwnd)) {
+        return true;
+    }
+    return false;
+}
+
+void KillOtherL2Processes()
+{
+    DWORD currentPid = GetCurrentProcessId();
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot != INVALID_HANDLE_VALUE)
+    {
+        PROCESSENTRY32W pe;
+        pe.dwSize = sizeof(PROCESSENTRY32W);
+        if (Process32FirstW(hSnapshot, &pe))
+        {
+            do
+            {
+                std::wstring name = pe.szExeFile;
+                std::transform(name.begin(), name.end(), name.begin(), ::towlower);
+                if ((name == L"l2.exe" || name == L"l2.bin") && pe.th32ProcessID != currentPid)
+                {
+                    if (IsGhostProcess(pe.th32ProcessID))
+                    {
+                        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                        if (hProcess != NULL)
+                        {
+                            TerminateProcess(hProcess, 0);
+                            CloseHandle(hProcess);
+                        }
+                    }
+                }
+            } while (Process32NextW(hSnapshot, &pe));
+        }
+        CloseHandle(hSnapshot);
+    }
+}
+
+void CheckAndHealOptionIni()
+{
+    wchar_t path[MAX_PATH];
+    if (GetModuleFileNameW(NULL, path, MAX_PATH))
+    {
+        wchar_t* p = wcsrchr(path, L'\\');
+        if (p != NULL)
+        {
+            *(p + 1) = L'\0';
+            wcscat_s(path, MAX_PATH, L"Option.ini");
+            
+            bool needReset = false;
+            HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hFile == INVALID_HANDLE_VALUE)
+            {
+                needReset = true;
+            }
+            else
+            {
+                LARGE_INTEGER size;
+                if (GetFileSizeEx(hFile, &size))
+                {
+                    if (size.QuadPart < 10)
+                    {
+                        needReset = true;
+                    }
+                    else
+                    {
+                        char buffer[1024] = {0};
+                        DWORD bytesRead = 0;
+                        if (ReadFile(hFile, buffer, 1023, &bytesRead, NULL))
+                        {
+                            std::string content(buffer, bytesRead);
+                            if (content.find("[Video]") == std::string::npos)
+                            {
+                                needReset = true;
+                            }
+                        }
+                    }
+                }
+                CloseHandle(hFile);
+            }
+
+            if (needReset)
+            {
+                const char* defaultOption = "[Video]\r\nGamePlayViewportX=1024\r\nGamePlayViewportY=768\r\nColorBits=32\r\nStartupFullScreen=False\r\n";
+                HANDLE hWriteFile = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (hWriteFile != INVALID_HANDLE_VALUE)
+                {
+                    DWORD bytesWritten = 0;
+                    WriteFile(hWriteFile, defaultOption, (DWORD)strlen(defaultOption), &bytesWritten, NULL);
+                    CloseHandle(hWriteFile);
+                }
+            }
+        }
+    }
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
 
@@ -1070,6 +1190,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         g_ModuleHandle = hModule;
         DisableThreadLibraryCalls(hModule);
         InterlockedExchange(&g_StartupGateState, STARTUP_GATE_PENDING);
+
+        // Auto-cura do Option.ini e encerramento de processos fantasma (l2.exe)
+        CheckAndHealOptionIni();
+        KillOtherL2Processes();
 
         // Verificacao do argumento secreto do Launcher (DESATIVADO)
         /*
