@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <cstring>
 #include <string>
+#include <algorithm>
 #include <shlobj.h>
 #include "Hook.h"
 #include "resource.h"
