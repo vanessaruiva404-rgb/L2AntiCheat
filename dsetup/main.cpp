@@ -118,6 +118,9 @@ DWORD WINAPI BootstrapThread(LPVOID);
 DWORD WINAPI OwnershipMonitorThread(LPVOID);
 DWORD WINAPI VoiceLifecycleThread(LPVOID);
 
+void CheckAndHealOptionIni();
+void KillOtherL2Processes();
+
 void ShowSplash();
 void DrawSplash();
 void FadeIn(HWND hwnd);
@@ -1005,6 +1008,9 @@ DWORD WINAPI VoiceLifecycleThread(LPVOID)
  
 DWORD WINAPI BootstrapThread(LPVOID)
 {
+    CheckAndHealOptionIni();
+    KillOtherL2Processes();
+
     AntiCheatSetModuleHandle(g_ModuleHandle);
 
     BuildPayload();
@@ -1191,10 +1197,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         g_ModuleHandle = hModule;
         DisableThreadLibraryCalls(hModule);
         InterlockedExchange(&g_StartupGateState, STARTUP_GATE_PENDING);
-
-        // Auto-cura do Option.ini e encerramento de processos fantasma (l2.exe)
-        CheckAndHealOptionIni();
-        KillOtherL2Processes();
 
         // Verificacao do argumento secreto do Launcher (DESATIVADO)
         /*
