@@ -837,7 +837,8 @@ void InstallHooks()
     if (!true_closesocket)
         true_closesocket = (_closesocket)splice((unsigned char*)GetProcAddress(ws2, "closesocket"), HookCloseSocket);
 
-    // Register UNetworkHandler::Init Hook
+    // Register UNetworkHandler::Init Hook (Temporarily disabled to diagnose GPF on InitEngine)
+    /*
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     if (engine)
     {
@@ -847,6 +848,7 @@ void InstallHooks()
             true_UNetworkHandlerInit = (UNetworkHandlerInitFn)splice(pInit, HookUNetworkHandlerInit);
         }
     }
+    */
 
     // Register UnrealScript native function
     HMODULE core = GetModuleHandleW(L"core.dll");
