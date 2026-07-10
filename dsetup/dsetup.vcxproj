@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -93,7 +93,6 @@
       </ShowProgress>
     </ResourceCompile>
   </ItemDefinitionGroup>
-  <ItemGroup>
     <ClCompile Include="AccountLogin.cpp" />
     <ClCompile Include="AccountOverlay.cpp" />
     <ClCompile Include="AccountVault.cpp" />
@@ -107,14 +106,6 @@
     <ClCompile Include="ProtectionState.cpp" />
     <ClCompile Include="ProtectionUI.cpp" />
     <ClCompile Include="StringCipher.cpp" />
-    <ClCompile Include="VoiceCapture.cpp" />
-    <ClCompile Include="VoiceClient.cpp" />
-    <ClCompile Include="VoiceConfig.cpp" />
-    <ClCompile Include="VoiceLog.cpp" />
-    <ClCompile Include="VoiceOverlay.cpp" />
-    <ClCompile Include="VoicePlayback.cpp" />
-    <ClCompile Include="VoiceResampler.cpp" />
-    <ClCompile Include="VoiceState.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="dsetup.def" />
@@ -135,14 +126,6 @@
     <ClInclude Include="ProtectionUI.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="StringCipher.h" />
-    <ClInclude Include="VoiceCapture.h" />
-    <ClInclude Include="VoiceClient.h" />
-    <ClInclude Include="VoiceConfig.h" />
-    <ClInclude Include="VoiceLog.h" />
-    <ClInclude Include="VoiceOverlay.h" />
-    <ClInclude Include="VoicePlayback.h" />
-    <ClInclude Include="VoiceResampler.h" />
-    <ClInclude Include="VoiceState.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />
