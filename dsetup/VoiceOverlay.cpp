@@ -23,7 +23,7 @@
 #pragma comment(lib, "shell32.lib")
 
 extern VoiceClient g_VoiceClient;
-extern void SendBypassToServer(const wchar_t* bypass);
+extern "C" void SendBypassToServer(const wchar_t* bypass);
 
 namespace
 {
