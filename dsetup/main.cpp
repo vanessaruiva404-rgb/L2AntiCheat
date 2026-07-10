@@ -866,18 +866,20 @@ void InstallHooks()
     if (!true_closesocket)
         true_closesocket = (_closesocket)splice((unsigned char*)GetProcAddress(ws2, "closesocket"), HookCloseSocket);
 
-    // Register UNetworkHandler::Init Hook (Temporarily disabled to diagnose GPF on InitEngine)
-    /*
+    // Register UNetworkHandler::Init Hook
     HMODULE engine = GetModuleHandleW(L"engine.dll");
     if (engine)
     {
         unsigned char* pInit = (unsigned char*)GetProcAddress(engine, "?Init@UNetworkHandler@@UAEXHPAVUGameEngine@@@Z");
         if (pInit)
         {
-            true_UNetworkHandlerInit = (UNetworkHandlerInitFn)splice(pInit, HookUNetworkHandlerInit);
+            // The first two instructions of UNetworkHandler::Init are:
+            // D9 EE (fldz) - 2 bytes
+            // 8B 44 24 08 (mov eax, [esp+8]) - 4 bytes
+            // Total = 6 bytes. We must steal exactly 6 bytes to avoid cutting instructions.
+            true_UNetworkHandlerInit = (UNetworkHandlerInitFn)spliceEx(pInit, HookUNetworkHandlerInit, 6);
         }
     }
-    */
 
     // Register UnrealScript native function
     HMODULE core = GetModuleHandleW(L"core.dll");
