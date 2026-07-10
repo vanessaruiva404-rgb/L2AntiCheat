@@ -741,7 +741,7 @@ void __fastcall HookUNetworkHandlerInit(void* thisPtr, void* edx, int param1, vo
     true_UNetworkHandlerInit(thisPtr, param1, param2);
 }
 
-void SendBypassToServer(const wchar_t* bypass)
+extern "C" __declspec(dllexport) void SendBypassToServer(const wchar_t* bypass)
 {
     if (!g_pNetworkHandler || !bypass)
         return;
