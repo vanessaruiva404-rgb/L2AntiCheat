@@ -920,117 +920,7 @@ DWORD WINAPI OwnershipMonitorThread(LPVOID)
     return 0;
 }
 
-static volatile LONG g_VoiceStarted = 0;
- 
- 
-bool IsVoiceSystemStarted()
-{
-    return InterlockedCompareExchange(&g_VoiceStarted, 0, 0) != 0;
-}
 
- 
-void StartVoiceSystem()
-{
-
-    if (!AccountLogin_IsGameSessionActive())
-    {
-        
-        return;
-    }
-
-    if (InterlockedCompareExchange(&g_VoiceStarted, 1, 0) != 0)
-    {
-         
-        return;
-    }
-
-   
-    char appData[MAX_PATH];
-
-    if (FAILED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appData)))
-    {
-        VoiceLog("[Voice] Failed to get AppData.");
-        InterlockedExchange(&g_VoiceStarted, 0);
-        return;
-    }
-
-    char dir[MAX_PATH];
-    sprintf_s(dir, sizeof(dir), "%s\\LineageII", appData);
-    CreateDirectoryA(dir, NULL);
-
-    char file[MAX_PATH];
-    sprintf_s(file, sizeof(file), "%s\\voice.ini", dir);
-
-
-    VoiceConfig config = VoiceConfigLoader::Load(file);
-
-
-
-    if (!config.Enabled)
-    {
-       
-        InterlockedExchange(&g_VoiceStarted, 0);
-        return;
-    }
-
-    if (!AccountLogin_IsGameSessionActive())
-    {
-       
-        InterlockedExchange(&g_VoiceStarted, 0);
-        return;
-    }
-
-    if (!g_VoiceClient.Start(config))
-    {
-       
-        InterlockedExchange(&g_VoiceStarted, 0);
-        return;
-    }
-
- 
-}
-
-
-void StopVoiceSystem()
-{
-    if (InterlockedCompareExchange(&g_VoiceStarted, 0, 1) != 1)
-        return;
-
-    g_VoiceClient.Stop();
-  
-}
-
-DWORD WINAPI VoiceLifecycleThread(LPVOID)
-{
-    DWORD lastStartAttempt = 0;
-
-    while (WaitForSingleObject(g_hStopEvent, 500) == WAIT_TIMEOUT)
-    {
-        const bool inGame = AccountLogin_IsGameSessionActive();
-
-        if (inGame)
-        {
-            if (!IsVoiceSystemStarted())
-            {
-                const DWORD now = GetTickCount();
-                if (lastStartAttempt == 0 || now - lastStartAttempt >= 5000)
-                {
-                    lastStartAttempt = now;
-                    StartVoiceSystem();
-                }
-            }
-        }
-        else
-        {
-            lastStartAttempt = 0;
-            StopVoiceSystem();
-        }
-    }
-
-    StopVoiceSystem();
-    return 0;
-}
- 
 DWORD WINAPI BootstrapThread(LPVOID)
 {
     CheckAndHealOptionIni();
@@ -1065,9 +955,9 @@ DWORD WINAPI BootstrapThread(LPVOID)
     }
     if (!InitializeSharedState())
     {
-        Logf("Failed to initialize shared state!\n");
+        // Failed to initialize shared state
     }
- 
+
    
     return 0;
 }
