@@ -23,6 +23,7 @@
 #pragma comment(lib, "shell32.lib")
 
 extern VoiceClient g_VoiceClient;
+extern void SendBypassToServer(const wchar_t* bypass);
 
 namespace
 {
@@ -54,9 +55,9 @@ namespace
 #define WM_L2VOICE_SPEAKERS_DIRTY (WM_APP + 504)
 
     static const int PANEL_W = 306;
-    static const int PANEL_H = 326;
+    static const int PANEL_H = 368;
     static const int PANEL_MIN_W = 296;
-    static const int PANEL_MIN_H = 312;
+    static const int PANEL_MIN_H = 354;
     static const int PANEL_RESIZE_GRIP = 10;
     static const int SPEAKERS_W = 260;
     static const int SPEAKER_ROW_H = 24;
@@ -105,7 +106,8 @@ namespace
         BTN_PANEL_KEY,
         BTN_MIC,
         BTN_AUTO_PANEL,
-        BTN_SPEAKERS
+        BTN_SPEAKERS,
+        BTN_SUPPORT
     };
 
     enum MiniIcon
@@ -128,7 +130,8 @@ namespace
         { BTN_PANEL_KEY,  { 12,  183,240, 207 } },
         { BTN_MIC,        { 12,  230, 78, 254 } },
         { BTN_AUTO_PANEL, { 93,  230,159, 254 } },
-        { BTN_SPEAKERS,   { 174, 230,240, 254 } }
+        { BTN_SPEAKERS,   { 174, 230,240, 254 } },
+        { BTN_SUPPORT,    { 12,  308, 240, 332 } }
     };
 
     struct SpeakerRow
@@ -537,6 +540,9 @@ namespace
         g_buttons[6].rc = MakeRect(margin, yOptions, margin + optW, yOptions + btnH);
         g_buttons[7].rc = MakeRect(margin + optW + optGap, yOptions, margin + optW * 2 + optGap, yOptions + btnH);
         g_buttons[8].rc = MakeRect(margin + optW * 2 + optGap * 2, yOptions, fullR, yOptions + btnH);
+
+        const int ySupport = 312;
+        g_buttons[9].rc = MakeRect(margin, ySupport, fullR, ySupport + btnH);
     }
 
     static void LayoutSettingsButtonsForWindow(HWND hwnd)
@@ -749,6 +755,9 @@ namespace
         DrawPill(hdc, g_buttons[7].rc, config.PanelVisible ? "AUTO" : "MANUAL", config.PanelVisible, BTN_AUTO_PANEL, ICON_EYE);
         DrawPill(hdc, g_buttons[8].rc, config.SpeakersVisible ? "FALANTES" : "OFF", config.SpeakersVisible, BTN_SPEAKERS, ICON_USERS);
 
+        DrawSectionLabel(hdc, 14, g_buttons[9].rc.top - 16, "5. CENTRAL DE SUPORTE");
+        DrawPill(hdc, g_buttons[9].rc, "FALAR COM ADM / ADMIN", false, BTN_SUPPORT, ICON_USERS);
+
         const bool inGame = AccountLogin_IsGameSessionActive();
         DrawStatusDot(hdc, 13, client.bottom - 13, !inGame || config.Muted ? C_MUTED : C_GREEN);
         DrawLeft(
@@ -829,6 +838,10 @@ namespace
                     ShowWindow(g_hSpeakers, SW_HIDE);
             }
 
+            break;
+
+        case BTN_SUPPORT:
+            SendBypassToServer(L"suporte");
             break;
         }
 
