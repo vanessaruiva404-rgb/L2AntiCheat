@@ -730,7 +730,7 @@ static FFrameStepFn g_FFrameStep = NULL;
 
 typedef void (__thiscall* UNetworkHandlerInitFn)(void* thisPtr, int param1, void* param2);
 static UNetworkHandlerInitFn true_UNetworkHandlerInit = NULL;
-static void* g_pNetworkHandler = NULL;
+void* g_pNetworkHandler = NULL;
 
 typedef void (__thiscall* UNetworkHandlerSendFn)(void* thisPtr, int len, unsigned char* buf);
 static int g_SendVtableOffset = -1;
@@ -739,6 +739,35 @@ void __fastcall HookUNetworkHandlerInit(void* thisPtr, void* edx, int param1, vo
 {
     g_pNetworkHandler = thisPtr;
     true_UNetworkHandlerInit(thisPtr, param1, param2);
+}
+
+void SendBypassToServer(const wchar_t* bypass)
+{
+    if (!g_pNetworkHandler || !bypass)
+        return;
+
+    void* pSocket = *(void**)((unsigned char*)g_pNetworkHandler + 0x48);
+    if (!pSocket)
+        return;
+
+    void** socketVtable = *(void***)pSocket;
+    if (!socketVtable)
+        return;
+
+    typedef void (__thiscall* SocketSendFn)(void* thisPtr, int len, unsigned char* buf);
+    SocketSendFn sendFunc = (SocketSendFn)socketVtable[26]; // 0x68 / 4 = 26
+    if (!sendFunc)
+        return;
+
+    int strLenBytes = (wcslen(bypass) + 1) * 2;
+    int packetSize = 2 + 1 + strLenBytes;
+
+    std::vector<unsigned char> packet(packetSize);
+    *(unsigned short*)&packet[0] = (unsigned short)packetSize;
+    packet[2] = 0x21; // RequestBypassToServer opcode
+    memcpy(&packet[3], bypass, strLenBytes);
+
+    sendFunc(pSocket, packetSize, packet.data());
 }
 
 void ResolveSendVtableOffset()
