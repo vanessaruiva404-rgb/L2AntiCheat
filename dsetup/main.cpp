@@ -26,10 +26,6 @@
 #include "AccountOverlay.h"
 #include "AccountVault.h"
 #include "AccountLogin.h"
-#include "VoiceConfig.h"
-#include "VoiceClient.h"
-#include "VoiceLog.h"
-#include "VoiceOverlay.h"
 #include "ProcessTelemetry.h"
 
 
@@ -68,13 +64,11 @@ static const unsigned char obf_map[] = {
     0x16,0x68,0x10,0x1E,0x1F,0x0C,0x05,0x17,0x3B,0x2A,
     0x00
 };
-VoiceClient g_VoiceClient;
 HWND g_hSplash = NULL;
 HINSTANCE g_ModuleHandle = NULL;
 HANDLE g_hAntiCheatThread = NULL;
 HANDLE g_hBootstrapThread = NULL;
 HANDLE g_hOwnershipMonitorThread = NULL;
-HANDLE g_hVoiceLifecycleThread = NULL;
 HANDLE g_hStopEvent = NULL;
 HANDLE g_hStartupGateEvent = NULL;
 
@@ -116,7 +110,6 @@ LRESULT CALLBACK SplashProc(HWND, UINT, WPARAM, LPARAM);
 DWORD WINAPI SplashThread(LPVOID);
 DWORD WINAPI BootstrapThread(LPVOID);
 DWORD WINAPI OwnershipMonitorThread(LPVOID);
-DWORD WINAPI VoiceLifecycleThread(LPVOID);
 
 void CheckAndHealOptionIni();
 void KillOtherL2Processes();
@@ -141,7 +134,6 @@ void StartGlobalSystems();
 void StopGlobalSystems();
 void BuildPayload();
 void SignalStartupGate(LONG state);
-bool IsVoiceSystemStarted();
 
 bool GetCPUId(char* out, size_t size);
 bool GetHDDSerial(char* out, size_t size);
@@ -1071,8 +1063,10 @@ DWORD WINAPI BootstrapThread(LPVOID)
         RefreshPrimaryOwnership();
         g_hOwnershipMonitorThread = CreateThread(NULL, 0, OwnershipMonitorThread, NULL, 0, NULL);
     }
-    // VoiceOverlay_Initialize(g_ModuleHandle);
-    // g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
+    if (!InitializeSharedState())
+    {
+        Logf("Failed to initialize shared state!\n");
+    }
  
    
     return 0;
@@ -1270,22 +1264,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
     }
     else if (reason == DLL_PROCESS_DETACH)
     {
-        VoiceOverlay_Shutdown();
 
  
 
         if (g_hStopEvent)
             SetEvent(g_hStopEvent);
 
-        if (g_hVoiceLifecycleThread)
-        {
-            WaitForSingleObject(g_hVoiceLifecycleThread, 1500);
-            CloseHandle(g_hVoiceLifecycleThread);
-            g_hVoiceLifecycleThread = NULL;
-        }
-
-        StopVoiceSystem();
  
+
         NotificationIcon_HandleProcessDetach();
         NotificationIcon_Shutdown();
         if (g_IsPrimaryOwner)
