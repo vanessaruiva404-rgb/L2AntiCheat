@@ -1232,6 +1232,9 @@ static bool ScanModules(std::wstring& reason)
 
         if (fromWindows)
         {
+            if (modName == L"comctl32.dll")
+                continue;
+
             if (!IsSignedFileTrusted(modPath))
             {
                 reason = L"Untrusted Windows module: " + modName;
