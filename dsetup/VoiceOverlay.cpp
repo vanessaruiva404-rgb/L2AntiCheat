@@ -1468,7 +1468,6 @@ void VoiceOverlay_Shutdown()
 
     if (g_hOverlayThread)
     {
-        WaitForSingleObject(g_hOverlayThread, 1500);
         CloseHandle(g_hOverlayThread);
         g_hOverlayThread = NULL;
     }
