@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <cstring>
 #include <string>
-#include <algorithm>
 #include <shlobj.h>
 #include "Hook.h"
 #include "resource.h"
@@ -26,6 +25,10 @@
 #include "AccountOverlay.h"
 #include "AccountVault.h"
 #include "AccountLogin.h"
+#include "VoiceConfig.h"
+#include "VoiceClient.h"
+#include "VoiceLog.h"
+#include "VoiceOverlay.h"
 #include "ProcessTelemetry.h"
 
 
@@ -64,11 +67,13 @@ static const unsigned char obf_map[] = {
     0x16,0x68,0x10,0x1E,0x1F,0x0C,0x05,0x17,0x3B,0x2A,
     0x00
 };
+VoiceClient g_VoiceClient;
 HWND g_hSplash = NULL;
 HINSTANCE g_ModuleHandle = NULL;
 HANDLE g_hAntiCheatThread = NULL;
 HANDLE g_hBootstrapThread = NULL;
 HANDLE g_hOwnershipMonitorThread = NULL;
+HANDLE g_hVoiceLifecycleThread = NULL;
 HANDLE g_hStopEvent = NULL;
 HANDLE g_hStartupGateEvent = NULL;
 
@@ -79,7 +84,7 @@ bool g_IsPrimaryOwner = false;
 bool g_GlobalSystemsStarted = false;
 volatile LONG g_StartupGateState = STARTUP_GATE_PENDING;
 
-char g_ServerIP[] = "157.254.248.55";
+char g_ServerIP[] = "127.0.0.1";
 //char g_ServerIP[] = "www.l2auth.com";
 char g_CPU[128] = { 0 };
 char g_HDD[128] = { 0 };
@@ -110,9 +115,7 @@ LRESULT CALLBACK SplashProc(HWND, UINT, WPARAM, LPARAM);
 DWORD WINAPI SplashThread(LPVOID);
 DWORD WINAPI BootstrapThread(LPVOID);
 DWORD WINAPI OwnershipMonitorThread(LPVOID);
-
-void CheckAndHealOptionIni();
-void KillOtherL2Processes();
+DWORD WINAPI VoiceLifecycleThread(LPVOID);
 
 void ShowSplash();
 void DrawSplash();
@@ -134,6 +137,7 @@ void StartGlobalSystems();
 void StopGlobalSystems();
 void BuildPayload();
 void SignalStartupGate(LONG state);
+bool IsVoiceSystemStarted();
 
 bool GetCPUId(char* out, size_t size);
 bool GetHDDSerial(char* out, size_t size);
@@ -713,136 +717,6 @@ int WSAAPI HookCloseSocket(SOCKET s)
     return true_closesocket(s);
 }
 
-// --- Cancel Buff Native Function ---
-struct FFrame;
-class UObject;
-
-typedef void (__thiscall* FFrameStepFn)(FFrame* self, UObject* context, void* const result);
-static FFrameStepFn g_FFrameStep = NULL;
-
-typedef void (__thiscall* UNetworkHandlerInitFn)(void* thisPtr, int param1, void* param2);
-static UNetworkHandlerInitFn true_UNetworkHandlerInit = NULL;
-void* g_pNetworkHandler = NULL;
-
-typedef void (__thiscall* UNetworkHandlerSendFn)(void* thisPtr, int len, unsigned char* buf);
-static int g_SendVtableOffset = -1;
-
-void __fastcall HookUNetworkHandlerInit(void* thisPtr, void* edx, int param1, void* param2)
-{
-    g_pNetworkHandler = thisPtr;
-    true_UNetworkHandlerInit(thisPtr, param1, param2);
-}
-
-extern "C" __declspec(dllexport) void SendBypassToServer(const wchar_t* bypass)
-{
-    if (!g_pNetworkHandler || !bypass)
-        return;
-
-    void* pSocket = *(void**)((unsigned char*)g_pNetworkHandler + 0x48);
-    if (!pSocket)
-        return;
-
-    void** socketVtable = *(void***)pSocket;
-    if (!socketVtable)
-        return;
-
-    typedef void (__thiscall* SocketSendFn)(void* thisPtr, int len, unsigned char* buf);
-    SocketSendFn sendFunc = (SocketSendFn)socketVtable[26]; // 0x68 / 4 = 26
-    if (!sendFunc)
-        return;
-
-    int strLenBytes = (wcslen(bypass) + 1) * 2;
-    int packetSize = 2 + 1 + strLenBytes;
-
-    std::vector<unsigned char> packet(packetSize);
-    *(unsigned short*)&packet[0] = (unsigned short)packetSize;
-    packet[2] = 0x21; // RequestBypassToServer opcode
-    memcpy(&packet[3], bypass, strLenBytes);
-
-    sendFunc(pSocket, packetSize, packet.data());
-}
-
-void ResolveSendVtableOffset()
-{
-    HMODULE engine = GetModuleHandleW(L"engine.dll");
-    if (!engine) return;
-
-    unsigned char* pFunc = (unsigned char*)GetProcAddress(engine, "?RequestOlympiadObserverEnd@UNetworkHandler@@UAEXXZ");
-    if (!pFunc) {
-        pFunc = (unsigned char*)GetProcAddress(engine, "?SendLogOutPacket@UNetworkHandler@@UAEXXZ");
-    }
-    if (!pFunc) return;
-
-    for (int i = 0; i < 40; ++i)
-    {
-        if (pFunc[i] == 0x8B && pFunc[i+1] == 0x01)
-        {
-            for (int j = i + 2; j < i + 12; ++j)
-            {
-                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x50) // call [eax + 1-byte offset]
-                {
-                    g_SendVtableOffset = pFunc[j+2];
-                    return;
-                }
-                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x90) // call [eax + 4-byte offset]
-                {
-                    g_SendVtableOffset = *(int*)(pFunc + j + 2);
-                    return;
-                }
-            }
-        }
-    }
-    g_SendVtableOffset = 56; // fallback index 14 (offset 56 bytes)
-}
-
-typedef void (__fastcall* NativeFn)(UObject* self, void* edx, FFrame& stack, void* const result);
-static NativeFn* g_pGNatives = NULL;
-
-void __fastcall NativeRequestCancelBuff(UObject* Self, void* edx, FFrame& Stack, void* const Result)
-{
-    int skillId = 0;
-    int skillLevel = 0;
-
-    if (g_FFrameStep)
-    {
-        g_FFrameStep(&Stack, Self, &skillId);
-        g_FFrameStep(&Stack, Self, &skillLevel);
-    }
-
-    // Avança o ponteiro de código do FFrame para consumir o token de fim de parâmetros (EX_EndFunctionParms / P_FINISH)
-    unsigned char* pStack = (unsigned char*)&Stack;
-    unsigned char** pCode = (unsigned char**)(pStack + 12);
-    if (pCode && *pCode)
-    {
-        (*pCode)++; // Equivalente a P_FINISH (Stack.Code++)
-    }
-
-    if (g_pNetworkHandler)
-    {
-        // Obtém o objeto de socket/conexão a partir do offset 0x48 do UNetworkHandler
-        void* pSocket = *(void**)((unsigned char*)g_pNetworkHandler + 0x48);
-        if (pSocket)
-        {
-            // O método virtual de envio (Send) está na vtable do socket no offset 0x68 (index 26)
-            void** socketVtable = *(void***)pSocket;
-            if (socketVtable)
-            {
-                typedef void (__thiscall* SocketSendFn)(void* thisPtr, int len, unsigned char* buf);
-                SocketSendFn sendFunc = (SocketSendFn)socketVtable[26]; // 0x68 / 4 = 26
-                
-                unsigned char packet[13];
-                *(unsigned short*)&packet[0] = 13;
-                packet[2] = 0xD0;
-                *(unsigned short*)&packet[3] = 0x50; // RequestCancelBuff sub-opcode
-                *(unsigned int*)&packet[5] = skillId;
-                *(unsigned int*)&packet[9] = skillLevel;
-
-                sendFunc(pSocket, 13, packet);
-            }
-        }
-    }
-}
-
 void InstallHooks()
 {
     HMODULE ws2 = GetModuleHandleA("ws2_32.dll");
@@ -857,34 +731,6 @@ void InstallHooks()
 
     if (!true_closesocket)
         true_closesocket = (_closesocket)splice((unsigned char*)GetProcAddress(ws2, "closesocket"), HookCloseSocket);
-
-    // Register UNetworkHandler::Init Hook
-    HMODULE engine = GetModuleHandleW(L"engine.dll");
-    if (engine)
-    {
-        unsigned char* pInit = (unsigned char*)GetProcAddress(engine, "?Init@UNetworkHandler@@UAEXHPAVUGameEngine@@@Z");
-        if (pInit)
-        {
-            // The first two instructions of UNetworkHandler::Init are:
-            // D9 EE (fldz) - 2 bytes
-            // 8B 44 24 08 (mov eax, [esp+8]) - 4 bytes
-            // Total = 6 bytes. We must steal exactly 6 bytes to avoid cutting instructions.
-            true_UNetworkHandlerInit = (UNetworkHandlerInitFn)spliceEx(pInit, HookUNetworkHandlerInit, 6);
-        }
-    }
-
-    // Register UnrealScript native function
-    HMODULE core = GetModuleHandleW(L"core.dll");
-    if (core)
-    {
-        g_pGNatives = (NativeFn*)GetProcAddress(core, "?GNatives@@3PAP8UObject@@AEXAAUFFrame@@QAX@ZA");
-        g_FFrameStep = (FFrameStepFn)GetProcAddress(core, "?Step@FFrame@@QAEXPAVUObject@@QAX@Z");
-    }
-
-    if (g_pGNatives)
-    {
-        g_pGNatives[3989] = (NativeFn)&NativeRequestCancelBuff;
-    }
 }
 
 DWORD WINAPI OwnershipMonitorThread(LPVOID)
@@ -920,12 +766,119 @@ DWORD WINAPI OwnershipMonitorThread(LPVOID)
     return 0;
 }
 
+static volatile LONG g_VoiceStarted = 0;
+ 
+ 
+bool IsVoiceSystemStarted()
+{
+    return InterlockedCompareExchange(&g_VoiceStarted, 0, 0) != 0;
+}
 
+ 
+void StartVoiceSystem()
+{
+
+    if (!AccountLogin_IsGameSessionActive())
+    {
+        
+        return;
+    }
+
+    if (InterlockedCompareExchange(&g_VoiceStarted, 1, 0) != 0)
+    {
+         
+        return;
+    }
+
+   
+    char appData[MAX_PATH];
+
+    if (FAILED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appData)))
+    {
+        VoiceLog("[Voice] Failed to get AppData.");
+        InterlockedExchange(&g_VoiceStarted, 0);
+        return;
+    }
+
+    char dir[MAX_PATH];
+    sprintf_s(dir, sizeof(dir), "%s\\LineageII", appData);
+    CreateDirectoryA(dir, NULL);
+
+    char file[MAX_PATH];
+    sprintf_s(file, sizeof(file), "%s\\voice.ini", dir);
+
+
+    VoiceConfig config = VoiceConfigLoader::Load(file);
+
+
+
+    if (!config.Enabled)
+    {
+       
+        InterlockedExchange(&g_VoiceStarted, 0);
+        return;
+    }
+
+    if (!AccountLogin_IsGameSessionActive())
+    {
+       
+        InterlockedExchange(&g_VoiceStarted, 0);
+        return;
+    }
+
+    if (!g_VoiceClient.Start(config))
+    {
+       
+        InterlockedExchange(&g_VoiceStarted, 0);
+        return;
+    }
+
+ 
+}
+
+
+void StopVoiceSystem()
+{
+    if (InterlockedCompareExchange(&g_VoiceStarted, 0, 1) != 1)
+        return;
+
+    g_VoiceClient.Stop();
+  
+}
+
+DWORD WINAPI VoiceLifecycleThread(LPVOID)
+{
+    DWORD lastStartAttempt = 0;
+
+    while (WaitForSingleObject(g_hStopEvent, 500) == WAIT_TIMEOUT)
+    {
+        const bool inGame = AccountLogin_IsGameSessionActive();
+
+        if (inGame)
+        {
+            if (!IsVoiceSystemStarted())
+            {
+                const DWORD now = GetTickCount();
+                if (lastStartAttempt == 0 || now - lastStartAttempt >= 5000)
+                {
+                    lastStartAttempt = now;
+                    StartVoiceSystem();
+                }
+            }
+        }
+        else
+        {
+            lastStartAttempt = 0;
+            StopVoiceSystem();
+        }
+    }
+
+    StopVoiceSystem();
+    return 0;
+}
+ 
 DWORD WINAPI BootstrapThread(LPVOID)
 {
-    CheckAndHealOptionIni();
-    KillOtherL2Processes();
-
     AntiCheatSetModuleHandle(g_ModuleHandle);
 
     BuildPayload();
@@ -953,11 +906,9 @@ DWORD WINAPI BootstrapThread(LPVOID)
         RefreshPrimaryOwnership();
         g_hOwnershipMonitorThread = CreateThread(NULL, 0, OwnershipMonitorThread, NULL, 0, NULL);
     }
-    if (!InitializeSharedState())
-    {
-        // Failed to initialize shared state
-    }
-
+    VoiceOverlay_Initialize(g_ModuleHandle);
+    g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
+ 
    
     return 0;
 }
@@ -986,126 +937,6 @@ HRESULT WINAPI DirectXSetupGetVersion(DWORD* version, DWORD* minor)
 }
  
 
-struct WinData {
-    DWORD pid;
-    HWND hwnd;
-};
-
-static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
-    WinData* data = (WinData*)lParam;
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (pid == data->pid) {
-        if (IsWindowVisible(hwnd)) {
-            data->hwnd = hwnd;
-            return FALSE;
-        }
-    }
-    return TRUE;
-}
-
-static bool IsGhostProcess(DWORD pid) {
-    WinData data = { pid, NULL };
-    EnumWindows(EnumWindowsProc, (LPARAM)&data);
-    if (data.hwnd == NULL) {
-        return true;
-    }
-    if (IsHungAppWindow(data.hwnd)) {
-        return true;
-    }
-    return false;
-}
-
-void KillOtherL2Processes()
-{
-    DWORD currentPid = GetCurrentProcessId();
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnapshot != INVALID_HANDLE_VALUE)
-    {
-        PROCESSENTRY32W pe;
-        pe.dwSize = sizeof(PROCESSENTRY32W);
-        if (Process32FirstW(hSnapshot, &pe))
-        {
-            do
-            {
-                std::wstring name = pe.szExeFile;
-                std::transform(name.begin(), name.end(), name.begin(), ::towlower);
-                if ((name == L"l2.exe" || name == L"l2.bin") && pe.th32ProcessID != currentPid)
-                {
-                    if (IsGhostProcess(pe.th32ProcessID))
-                    {
-                        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-                        if (hProcess != NULL)
-                        {
-                            TerminateProcess(hProcess, 0);
-                            CloseHandle(hProcess);
-                        }
-                    }
-                }
-            } while (Process32NextW(hSnapshot, &pe));
-        }
-        CloseHandle(hSnapshot);
-    }
-}
-
-void CheckAndHealOptionIni()
-{
-    wchar_t path[MAX_PATH];
-    if (GetModuleFileNameW(NULL, path, MAX_PATH))
-    {
-        wchar_t* p = wcsrchr(path, L'\\');
-        if (p != NULL)
-        {
-            *(p + 1) = L'\0';
-            wcscat_s(path, MAX_PATH, L"Option.ini");
-            
-            bool needReset = false;
-            HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (hFile == INVALID_HANDLE_VALUE)
-            {
-                needReset = true;
-            }
-            else
-            {
-                LARGE_INTEGER size;
-                if (GetFileSizeEx(hFile, &size))
-                {
-                    if (size.QuadPart < 10)
-                    {
-                        needReset = true;
-                    }
-                    else
-                    {
-                        char buffer[1024] = {0};
-                        DWORD bytesRead = 0;
-                        if (ReadFile(hFile, buffer, 1023, &bytesRead, NULL))
-                        {
-                            std::string content(buffer, bytesRead);
-                            if (content.find("[Video]") == std::string::npos)
-                            {
-                                needReset = true;
-                            }
-                        }
-                    }
-                }
-                CloseHandle(hFile);
-            }
-
-            if (needReset)
-            {
-                const char* defaultOption = "[Video]\r\nGamePlayViewportX=1024\r\nGamePlayViewportY=768\r\nColorBits=32\r\nStartupFullScreen=False\r\n";
-                HANDLE hWriteFile = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (hWriteFile != INVALID_HANDLE_VALUE)
-                {
-                    DWORD bytesWritten = 0;
-                    WriteFile(hWriteFile, defaultOption, (DWORD)strlen(defaultOption), &bytesWritten, NULL);
-                    CloseHandle(hWriteFile);
-                }
-            }
-        }
-    }
-}
-
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
 
@@ -1115,28 +946,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(hModule);
         InterlockedExchange(&g_StartupGateState, STARTUP_GATE_PENDING);
 
-        // Verificacao do argumento secreto do Launcher (DESATIVADO)
-        /*
-        LPWSTR cmdLine = GetCommandLineW();
-        if (cmdLine == NULL || wcsstr(cmdLine, L"-from-launcher") == NULL)
-        {
-            ShowProtectionAlertBlocking(
-                L"L2 RP Protection",
-                L"Acesso Negado!",
-                L"Por favor, inicie o jogo usando o Launcher Oficial.",
-                3800);
-
-            TerminateProcess(GetCurrentProcess(), ERROR_ACCESS_DENIED);
-            return FALSE;
-        }
-        */
-
         if (!ClientInstanceManager::Acquire())
         {
             ShowProtectionAlertBlocking(
-                L"L2 RP Protection",
+                L"L2Elysian Protection",
                 L"Limite de sess\u00f5es por HWID atingido.",
-                L"Apenas 1 cliente ativo \u00e9 permitido por computador.",
+                L"Contas Premium/VIP possuem permiss\u00e3o para at\u00e9 2 clientes simult\u00e2neos.",
                 3800);
 
             TerminateProcess(
@@ -1154,14 +969,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
     }
     else if (reason == DLL_PROCESS_DETACH)
     {
+        VoiceOverlay_Shutdown();
 
  
 
         if (g_hStopEvent)
             SetEvent(g_hStopEvent);
 
- 
+        if (g_hVoiceLifecycleThread)
+        {
+            WaitForSingleObject(g_hVoiceLifecycleThread, 1500);
+            CloseHandle(g_hVoiceLifecycleThread);
+            g_hVoiceLifecycleThread = NULL;
+        }
 
+        StopVoiceSystem();
+ 
         NotificationIcon_HandleProcessDetach();
         NotificationIcon_Shutdown();
         if (g_IsPrimaryOwner)
