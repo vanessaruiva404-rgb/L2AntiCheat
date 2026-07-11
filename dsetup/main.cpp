@@ -1105,7 +1105,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 
         if (g_hVoiceLifecycleThread)
         {
-            WaitForSingleObject(g_hVoiceLifecycleThread, 1500);
             CloseHandle(g_hVoiceLifecycleThread);
             g_hVoiceLifecycleThread = NULL;
         }
