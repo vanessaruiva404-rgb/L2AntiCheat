@@ -1146,7 +1146,6 @@ void StopProcessTelemetry()
 
     if (g_TelemetryThread)
     {
-        WaitForSingleObject(g_TelemetryThread, 10000);
         CloseHandle(g_TelemetryThread);
         g_TelemetryThread = NULL;
     }
