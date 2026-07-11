@@ -114,7 +114,8 @@ static const wchar_t* g_AllowedGameModules[] =
      L"L2CraftClub.dll", L"EmuDev.dll",
       L"discord_game_sdk.dll", L"authlogin746.dll", L"abstractex.dll",
       L"msvcp140d.dll", L"vcruntime140d.dll", L"ucrtbased.dll",
-      L"bdcam32.dll", L"wslbscr32.dll", L"owexplorer.dll"
+      L"bdcam32.dll", L"wslbscr32.dll", L"owexplorer.dll",
+      L"safemon.dll", L"comctl32.dll", L"aswhook.dll"
 
 };
 
@@ -1037,6 +1038,9 @@ static void StopInputMonitoring()
 
     if (thread)
     {
+        // A bounded wait also keeps process detach safe if Windows is already
+        // tearing down window threads.
+        WaitForSingleObject(thread, 1500);
         CloseHandle(thread);
     }
 
@@ -1235,9 +1239,6 @@ static bool ScanModules(std::wstring& reason)
             }
             continue;
         }
-
-        if (EqualsAnyInsensitive(modName, g_AllowedGameModules, _countof(g_AllowedGameModules)))
-            continue;
 
         reason = L"External module: " + modName;
         return true;
