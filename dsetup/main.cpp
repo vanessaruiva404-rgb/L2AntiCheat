@@ -717,6 +717,107 @@ int WSAAPI HookCloseSocket(SOCKET s)
     return true_closesocket(s);
 }
 
+// --- Cancel Buff Native Function ---
+struct FFrame;
+class UObject;
+
+typedef void (__thiscall* FFrameStepFn)(FFrame* self, UObject* context, void* const result);
+static FFrameStepFn g_FFrameStep = NULL;
+
+typedef void (__thiscall* UNetworkHandlerInitFn)(void* thisPtr, int param1, void* param2);
+static UNetworkHandlerInitFn true_UNetworkHandlerInit = NULL;
+static void* g_pNetworkHandler = NULL;
+
+typedef void (__thiscall* UNetworkHandlerSendFn)(void* thisPtr, int len, unsigned char* buf);
+static int g_SendVtableOffset = -1;
+
+void __fastcall HookUNetworkHandlerInit(void* thisPtr, void* edx, int param1, void* param2)
+{
+    g_pNetworkHandler = thisPtr;
+    true_UNetworkHandlerInit(thisPtr, param1, param2);
+}
+
+void ResolveSendVtableOffset()
+{
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (!engine) return;
+
+    unsigned char* pFunc = (unsigned char*)GetProcAddress(engine, "?RequestOlympiadObserverEnd@UNetworkHandler@@UAEXXZ");
+    if (!pFunc) {
+        pFunc = (unsigned char*)GetProcAddress(engine, "?SendLogOutPacket@UNetworkHandler@@UAEXXZ");
+    }
+    if (!pFunc) return;
+
+    for (int i = 0; i < 40; ++i)
+    {
+        if (pFunc[i] == 0x8B && pFunc[i+1] == 0x01)
+        {
+            for (int j = i + 2; j < i + 12; ++j)
+            {
+                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x50) // call [eax + 1-byte offset]
+                {
+                    g_SendVtableOffset = pFunc[j+2];
+                    return;
+                }
+                if (pFunc[j] == 0xFF && pFunc[j+1] == 0x90) // call [eax + 4-byte offset]
+                {
+                    g_SendVtableOffset = *(int*)(pFunc + j + 2);
+                    return;
+                }
+            }
+        }
+    }
+    g_SendVtableOffset = 56; // fallback index 14 (offset 56 bytes)
+}
+
+typedef void (__fastcall* NativeFn)(UObject* self, void* edx, FFrame& stack, void* const result);
+static NativeFn* g_pGNatives = NULL;
+
+void __fastcall NativeRequestCancelBuff(UObject* Self, void* edx, FFrame& Stack, void* const Result)
+{
+    int skillId = 0;
+    int skillLevel = 0;
+
+    if (g_FFrameStep)
+    {
+        g_FFrameStep(&Stack, Self, &skillId);
+        g_FFrameStep(&Stack, Self, &skillLevel);
+    }
+
+    // Avança o ponteiro de código do FFrame para consumir o token de fim de parâmetros (EX_EndFunctionParms / P_FINISH)
+    unsigned char* pStack = (unsigned char*)&Stack;
+    unsigned char** pCode = (unsigned char**)(pStack + 12);
+    if (pCode && *pCode)
+    {
+        (*pCode)++; // Equivalente a P_FINISH (Stack.Code++)
+    }
+
+    if (g_pNetworkHandler)
+    {
+        // Obtém o objeto de socket/conexão a partir do offset 0x48 do UNetworkHandler
+        void* pSocket = *(void**)((unsigned char*)g_pNetworkHandler + 0x48);
+        if (pSocket)
+        {
+            // O método virtual de envio (Send) está na vtable do socket no offset 0x68 (index 26)
+            void** socketVtable = *(void***)pSocket;
+            if (socketVtable)
+            {
+                typedef void (__thiscall* SocketSendFn)(void* thisPtr, int len, unsigned char* buf);
+                SocketSendFn sendFunc = (SocketSendFn)socketVtable[26]; // 0x68 / 4 = 26
+                
+                unsigned char packet[13];
+                *(unsigned short*)&packet[0] = 13;
+                packet[2] = 0xD0;
+                *(unsigned short*)&packet[3] = 0x50; // RequestCancelBuff sub-opcode
+                *(unsigned int*)&packet[5] = skillId;
+                *(unsigned int*)&packet[9] = skillLevel;
+
+                sendFunc(pSocket, 13, packet);
+            }
+        }
+    }
+}
+
 void InstallHooks()
 {
     HMODULE ws2 = GetModuleHandleA("ws2_32.dll");
@@ -731,6 +832,32 @@ void InstallHooks()
 
     if (!true_closesocket)
         true_closesocket = (_closesocket)splice((unsigned char*)GetProcAddress(ws2, "closesocket"), HookCloseSocket);
+
+    // Register UNetworkHandler::Init Hook (Temporarily disabled to diagnose GPF on InitEngine)
+    /*
+    HMODULE engine = GetModuleHandleW(L"engine.dll");
+    if (engine)
+    {
+        unsigned char* pInit = (unsigned char*)GetProcAddress(engine, "?Init@UNetworkHandler@@UAEXHPAVUGameEngine@@@Z");
+        if (pInit)
+        {
+            true_UNetworkHandlerInit = (UNetworkHandlerInitFn)splice(pInit, HookUNetworkHandlerInit);
+        }
+    }
+    */
+
+    // Register UnrealScript native function
+    HMODULE core = GetModuleHandleW(L"core.dll");
+    if (core)
+    {
+        g_pGNatives = (NativeFn*)GetProcAddress(core, "?GNatives@@3PAP8UObject@@AEXAAUFFrame@@QAX@ZA");
+        g_FFrameStep = (FFrameStepFn)GetProcAddress(core, "?Step@FFrame@@QAEXPAVUObject@@QAX@Z");
+    }
+
+    if (g_pGNatives)
+    {
+        g_pGNatives[3989] = (NativeFn)&NativeRequestCancelBuff;
+    }
 }
 
 DWORD WINAPI OwnershipMonitorThread(LPVOID)
@@ -906,8 +1033,8 @@ DWORD WINAPI BootstrapThread(LPVOID)
         RefreshPrimaryOwnership();
         g_hOwnershipMonitorThread = CreateThread(NULL, 0, OwnershipMonitorThread, NULL, 0, NULL);
     }
-    VoiceOverlay_Initialize(g_ModuleHandle);
-    g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
+    // VoiceOverlay_Initialize(g_ModuleHandle);
+    // g_hVoiceLifecycleThread = CreateThread(NULL, 0, VoiceLifecycleThread, NULL, 0, NULL);
  
    
     return 0;
@@ -949,7 +1076,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         if (!ClientInstanceManager::Acquire())
         {
             ShowProtectionAlertBlocking(
-                L"L2Elysian Protection",
+                L"L2 RP Protection",
                 L"Limite de sess\u00f5es por HWID atingido.",
                 L"Contas Premium/VIP possuem permiss\u00e3o para at\u00e9 2 clientes simult\u00e2neos.",
                 3800);
@@ -978,7 +1105,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 
         if (g_hVoiceLifecycleThread)
         {
-            WaitForSingleObject(g_hVoiceLifecycleThread, 1500);
             CloseHandle(g_hVoiceLifecycleThread);
             g_hVoiceLifecycleThread = NULL;
         }
