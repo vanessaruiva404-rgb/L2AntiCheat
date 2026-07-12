@@ -1147,6 +1147,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
         AccountLogin_Shutdown();
         AccountVault_Shutdown();
         ClientInstanceManager::Release();
+
+        TerminateProcess(GetCurrentProcess(), 0);
     }
 
     return TRUE;
