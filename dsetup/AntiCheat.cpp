@@ -648,21 +648,8 @@ static bool HasRecentLowLevelMouse()
     return (GetTickCount() - last) <= kLowLevelCorrelationGraceMs;
 }
 
-static bool IsInputBypassEnabled()
-{
-    static int cachedVal = -1;
-    if (cachedVal == -1)
-    {
-        std::wstring iniPath = GetAppDataDir() + L"\\voice.ini";
-        cachedVal = GetPrivateProfileIntW(L"AntiCheat", L"BypassInputChecks", 0, iniPath.c_str());
-    }
-    return cachedVal == 1;
-}
-
 static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
 {
-    if (IsInputBypassEnabled())
-        return;
     // A NULL HWND is a PostThreadMessage delivered to one of the game's
     // window-owning threads (these hooks are never installed system-wide).
     if (window && !IsCurrentProcessWindow(window))
@@ -682,14 +669,14 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
             if (ShouldCountKeySignal(virtualKey, kRepeatedKeySignalQuietMs))
             {
                 QueueRepeatedInputDetection(
-                    g_BackgroundKeyboardWindowTick,
-                    g_BackgroundKeyboardCount,
-                    kBackgroundInputWindowMs,
-                    IsRoutineActionBarOrTargetKey(virtualKey)
-                        ? kBackgroundRoutineKeyThreshold
-                        : kBackgroundControlKeyThreshold,
-                    L"Repeated background keyboard control directed to the game: " +
-                    GetVirtualKeyLabel(virtualKey));
+                     g_BackgroundKeyboardWindowTick,
+                     g_BackgroundKeyboardCount,
+                     kBackgroundInputWindowMs,
+                     IsRoutineActionBarOrTargetKey(virtualKey)
+                         ? kBackgroundRoutineKeyThreshold
+                         : kBackgroundControlKeyThreshold,
+                     L"Repeated background keyboard control directed to the game: " +
+                     GetVirtualKeyLabel(virtualKey));
             }
         }
         else
@@ -697,11 +684,11 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
             if (ShouldCountMouseSignal(kRepeatedMouseSignalQuietMs))
             {
                 QueueRepeatedInputDetection(
-                    g_BackgroundMouseWindowTick,
-                    g_BackgroundMouseCount,
-                    kBackgroundInputWindowMs,
-                    kBackgroundMouseThreshold,
-                    L"Repeated background mouse control directed to the game");
+                     g_BackgroundMouseWindowTick,
+                     g_BackgroundMouseCount,
+                     kBackgroundInputWindowMs,
+                     kBackgroundMouseThreshold,
+                     L"Repeated background mouse control directed to the game");
             }
         }
         return;
@@ -724,24 +711,24 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
                 if (ShouldCountKeySignal(virtualKey, kRepeatedKeySignalQuietMs))
                 {
                     QueueRepeatedInputDetection(
-                        g_SyntheticMessageWindowTick,
-                        g_SyntheticMessageCount,
-                        kSyntheticMessageWindowMs,
-                        IsRoutineActionBarOrTargetKey(virtualKey)
-                            ? kSyntheticRoutineKeyThreshold
-                            : kSyntheticControlKeyThreshold,
-                        L"Repeated synthetic keyboard messages directed to the game: " +
-                        GetVirtualKeyLabel(virtualKey));
+                         g_SyntheticMessageWindowTick,
+                         g_SyntheticMessageCount,
+                         kSyntheticMessageWindowMs,
+                         IsRoutineActionBarOrTargetKey(virtualKey)
+                             ? kSyntheticRoutineKeyThreshold
+                             : kSyntheticControlKeyThreshold,
+                         L"Repeated synthetic keyboard messages directed to the game: " +
+                         GetVirtualKeyLabel(virtualKey));
                 }
             }
             else if (ShouldCountMouseSignal(kRepeatedMouseSignalQuietMs))
             {
                 QueueRepeatedInputDetection(
-                    g_SyntheticMessageWindowTick,
-                    g_SyntheticMessageCount,
-                    kSyntheticMessageWindowMs,
-                    kSyntheticMouseThreshold,
-                    L"Repeated synthetic mouse messages directed to the game");
+                     g_SyntheticMessageWindowTick,
+                     g_SyntheticMessageCount,
+                     kSyntheticMessageWindowMs,
+                     kSyntheticMouseThreshold,
+                     L"Repeated synthetic mouse messages directed to the game");
             }
         }
     }
@@ -749,8 +736,6 @@ static void InspectInputWindowMessage(HWND window, UINT message, WPARAM wParam)
 
 static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lParam)
 {
-    if (IsInputBypassEnabled())
-        return CallNextHookEx(g_hLowLevelKeyboardHook, code, wParam, lParam);
     if (code == HC_ACTION &&
         (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) &&
         IsCurrentProcessForeground())
@@ -786,8 +771,6 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lPa
 
 static LRESULT CALLBACK LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam)
 {
-    if (IsInputBypassEnabled())
-        return CallNextHookEx(g_hLowLevelMouseHook, code, wParam, lParam);
     if (code == HC_ACTION && IsCurrentProcessForeground())
     {
         const bool mouseAction =
